@@ -96,6 +96,8 @@ jobs:
     - name: Create PLTs
       if: (steps.plt_cache.outputs.cache-hit != 'true') && (matrix.lint)
       run: mix dialyzer --plt
+      env:
+        MIX_ENV: dev
 
     # By default, the GitHub Cache action will only save the cache if all steps in the job succeed,
     # so we separate the cache restore and save steps in case running dialyzer fails.
@@ -110,4 +112,6 @@ jobs:
           priv/plts
 
     - run: mix dialyzer --format github
+      env:
+        MIX_ENV: dev
       if: ${{ matrix.lint }}
