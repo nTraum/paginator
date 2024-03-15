@@ -74,12 +74,14 @@ jobs:
           ${{ runner.os }}-deps-${{ matrix.otp }}-${{ matrix.elixir }}
 
     - run: mix deps.get
-    - if: ${{ matrix.lint }}
-      run: mix compile --warn-as-errors
+    - run: mix deps.unlock --check-unused
+    - run: mix compile --warn-as-errors
+      if: ${{ matrix.lint }}
     - run: mix test
 
     # Cache key based on Erlang/Elixir version and the mix.lock hash
     - name: Restore PLT cache
+      if: ${{ matrix.lint }}
       id: plt_cache
       uses: actions/cache/restore@v3
       with:
@@ -92,7 +94,7 @@ jobs:
 
     # Create PLTs if no cache was found
     - name: Create PLTs
-      if: steps.plt_cache.outputs.cache-hit != 'true'
+      if: (steps.plt_cache.outputs.cache-hit != 'true') && (matrix.lint)
       run: mix dialyzer --plt
 
     # By default, the GitHub Cache action will only save the cache if all steps in the job succeed,
@@ -100,7 +102,7 @@ jobs:
     - name: Save PLT cache
       id: plt_cache_save
       uses: actions/cache/save@v3
-      if: steps.plt_cache.outputs.cache-hit != 'true'
+      if: (steps.plt_cache.outputs.cache-hit != 'true') && (matrix.lint)
       with:
         key: |
           plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
@@ -108,3 +110,4 @@ jobs:
           priv/plts
 
     - run: mix dialyzer --format github
+      if: ${{ matrix.lint }}
