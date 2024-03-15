@@ -2,6 +2,8 @@ name: Test
 
 on:
   push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -35,6 +37,10 @@ jobs:
         - "24.0"
         - "25.0"
         - "26.0"
+        include:
+         - elixir: "1.12"
+           otp: "23.0"
+           lint: true
         exclude:
         - elixir: "1.12"
           otp: "25.0"
@@ -46,6 +52,7 @@ jobs:
           otp: "23.0"
         - elixir: "1.16"
           otp: "23.0"
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -57,7 +64,7 @@ jobs:
         otp-version: ${{ matrix.otp }}
 
     - name: Restore build and deps caches
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           deps
@@ -66,11 +73,45 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-deps-${{ matrix.otp }}-${{ matrix.elixir }}
 
-    - name: Install package dependencies
-      run: mix deps.get
+    - run: mix deps.get
+    - run: mix deps.unlock --check-unused
+    - run: mix compile --warn-as-errors
+      if: ${{ matrix.lint }}
+    - run: mix test
 
-    - name: Compile dependencies
-      run: mix compile
+    # Cache key based on Erlang/Elixir version and the mix.lock hash
+    - name: Restore PLT cache
+      if: ${{ matrix.lint }}
+      id: plt_cache
+      uses: actions/cache/restore@v3
+      with:
+        key: |
+          plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
+        path: |
+          priv/plts
 
-    - name: Run unit tests
-      run: mix test
+    # Create PLTs if no cache was found
+    - name: Create PLTs
+      if: (steps.plt_cache.outputs.cache-hit != 'true') && (matrix.lint)
+      run: mix dialyzer --plt
+      env:
+        MIX_ENV: dev
+
+    # By default, the GitHub Cache action will only save the cache if all steps in the job succeed,
+    # so we separate the cache restore and save steps in case running dialyzer fails.
+    - name: Save PLT cache
+      id: plt_cache_save
+      uses: actions/cache/save@v3
+      if: (steps.plt_cache.outputs.cache-hit != 'true') && (matrix.lint)
+      with:
+        key: |
+          plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        path: |
+          priv/plts
+
+    - run: mix dialyzer --format github
+      env:
+        MIX_ENV: dev
+      if: ${{ matrix.lint }}
